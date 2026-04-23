@@ -14,10 +14,13 @@ firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 </script>
 
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Spectral:ital,wght@0,400;0,600;1,400&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
 
 <style>
-/* Fontes do sistema (sans-serif nativa) */
-
 
 /* ── VARIABLES ───────────────────────────────────── */
 :root{
@@ -42,8 +45,8 @@ const database = firebase.database();
   --shadow-lg:  0 12px 48px rgba(0,0,0,.7);
   --header-h:   72px;
   --nav-w:      240px;
-  --font-head:  -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-  --font-body:  -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', sans-serif;
 }
 
 /* ── RESET ───────────────────────────────────────── */
@@ -1328,27 +1331,14 @@ footer{
 .np-del-btn{
   background:none;color:var(--red);
   border:1px solid rgba(240,79,79,.2);border-radius:4px;
-  padding:2px 8px;font-size:.8em;cursor:pointer;
+  padding:2px 6px;font-size:.8em;cursor:pointer;
   opacity:0;transition:opacity .2s;
   flex-shrink:0;
 }
 .np-del-btn:hover{background:rgba(240,79,79,.15)}
-.np-edit-btn{
-  background:none;color:var(--accent);
-  border:1px solid var(--border2);border-radius:4px;
-  padding:2px 8px;font-size:.8em;cursor:pointer;
-  opacity:0;transition:opacity .2s;
-  flex-shrink:0;
-}
-.np-edit-btn:hover{background:rgba(99,138,255,.12)}
-.np-lead-article:hover .np-del-btn,
-.np-lead-article:hover .np-edit-btn,
 .np-two-col:hover .np-del-btn,
-.np-two-col:hover .np-edit-btn,
 .np-lead-banner:hover .np-del-btn,
-.np-lead-banner:hover .np-edit-btn,
-.np-side-article:hover .np-del-btn,
-.np-side-article:hover .np-edit-btn{ opacity:1 }
+.np-side-article:hover .np-del-btn{ opacity:1 }
 
 /* ── EMPTY STATE ───────────────────────────────── */
 .newspaper-empty{
@@ -3009,54 +2999,6 @@ function deleteTopic(idx) {
   renderTopics();
 }
 
-function openEditTopic(idx) {
-  const topics = LS.get('topics', []);
-  const t = topics[idx];
-  if (!t) return;
-  openModal('Editar Notícia',
-    `<div class="form-group"><label>Título</label><input type="text" id="tp-edit-title" value="${escHtml(t.title)}"></div>
-     <div class="form-group"><label>Descrição</label><textarea id="tp-edit-desc" rows="4">${escHtml(t.desc)}</textarea></div>
-     <div class="form-group">
-       <label for="tp-edit-img">Imagem (deixe em branco para manter a atual)</label>
-       <input type="file" id="tp-edit-img" accept="image/*" style="display:none" onchange="previewTopicImg2(event)">
-       <label for="tp-edit-img" class="btn-edit" style="display:inline-block;cursor:pointer;margin-bottom:10px">Trocar Imagem</label>
-       <div id="tp-edit-preview" style="border:2px dashed rgba(77,166,255,.3);border-radius:8px;min-height:80px;display:flex;align-items:center;justify-content:center;background:rgba(10,10,20,.6);overflow:hidden">
-         ${t.image ? `<img src="${t.image}" style="max-width:100%;max-height:200px;object-fit:contain;border-radius:6px">` : '<span style="color:#555;font-style:italic">Sem imagem</span>'}
-       </div>
-     </div>`,
-    () => {
-      const title = document.getElementById('tp-edit-title').value.trim();
-      const desc  = document.getElementById('tp-edit-desc').value.trim();
-      if (!title) { alert('Informe o título.'); return; }
-      const imgEl = document.getElementById('tp-edit-img');
-      const applyEdit = (image) => {
-        topics[idx] = { ...topics[idx], title, desc, image };
-        LS.set('topics', topics);
-        renderTopics();
-        closeModal();
-      };
-      if (imgEl.files[0]) {
-        const reader = new FileReader();
-        reader.onload = e => applyEdit(e.target.result);
-        reader.readAsDataURL(imgEl.files[0]);
-      } else {
-        applyEdit(t.image);
-      }
-    }
-  );
-}
-
-function previewTopicImg2(e) {
-  const f = e.target.files[0];
-  if (!f) return;
-  const r = new FileReader();
-  r.onload = ev => {
-    document.getElementById('tp-edit-preview').innerHTML =
-      `<img src="${ev.target.result}" style="max-width:100%;max-height:200px;object-fit:contain;border-radius:6px">`;
-  };
-  r.readAsDataURL(f);
-}
-
 function renderTopics() {
   const grid  = document.getElementById('topics-grid');
   const empty = document.getElementById('np-empty');
@@ -3086,8 +3028,7 @@ function renderTopics() {
     ? new Date(t.createdAt).toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' })
     : '';
   const del = i => isAdmin
-    ? `<button class="np-edit-btn" onclick="openEditTopic(${i})">✏ Editar</button>
-       <button class="np-del-btn" onclick="deleteTopic(${i})">✕ Apagar</button>` : '';
+    ? `<button class="np-del-btn" onclick="deleteTopic(${i})">Remover</button>` : '';
   const img = (t, cls, ph) => t.image
     ? `<img src="${escHtml(t.image)}" alt="${escHtml(t.title)}" class="${cls}">`
     : `<div class="${ph}"></div>`;
@@ -3145,7 +3086,7 @@ function renderXmlTabs() {
   const container = document.getElementById('xml-panes-container');
   if (!nav || !container) return;
   nav.innerHTML = tabs.map((t,i) =>
-    `<button class="xml-tab-btn${i===0?' active':''}" onclick="switchXmlTab('${t.id}')">${escHtml(t.label)}${isAdmin?` <span onclick="event.stopPropagation();removeXmlTab('${t.id}')" style="margin-left:6px;opacity:.6;font-size:.85em;cursor:pointer" title="Remover aba">&times;</span>`:''}</button>`
+    `<button class="xml-tab-btn${i===0?' active':''}" data-tab="${t.id}" onclick="switchXmlTab('${t.id}')">${escHtml(t.label)}${isAdmin?` <span onclick="event.stopPropagation();removeXmlTab('${t.id}')" style="margin-left:6px;opacity:.6;font-size:.85em;cursor:pointer" title="Remover aba">&times;</span>`:''}</button>`
   ).join('');
   container.innerHTML = tabs.map((t,i) =>
     `<div class="xml-pane${i===0?' active':''}" id="xml-pane-${t.id}">${t.content}</div>`
@@ -3154,8 +3095,7 @@ function renderXmlTabs() {
 
 function switchXmlTab(id) {
   document.querySelectorAll('.xml-tab-btn').forEach(function(b) {
-    var onclick = b.getAttribute('onclick') || '';
-    b.classList.toggle('active', onclick.indexOf("'" + id + "'") !== -1);
+    b.classList.toggle('active', b.getAttribute('data-tab') === id);
   });
   document.querySelectorAll('.xml-pane').forEach(function(p) {
     p.classList.toggle('active', p.id === 'xml-pane-' + id);

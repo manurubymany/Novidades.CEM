@@ -1096,6 +1096,57 @@ function deleteUserRow(idx) {
 ═══════════════════════════════════════════════════════════ */
 initUsersStorage();
 
+// ── Session helpers (localStorage com expiração de 30 dias — persiste mesmo ao fechar o navegador) ──
+const SESSION_KEY = 'cemActiveSession';
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias em milissegundos
+
+function saveSession(user) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      email:     user.email,
+      role:      user.role,
+      name:      user.name,
+      expiresAt: Date.now() + SESSION_TTL_MS
+    }));
+  } catch(e) {}
+}
+
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+}
+
+function restoreSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const sess = JSON.parse(raw);
+    // Verificar expiração
+    if (sess.expiresAt && Date.now() > sess.expiresAt) { clearSession(); return false; }
+    // Verificar se o usuário ainda existe e está ativo
+    const users = LS.get('siteUsers', []);
+    const user  = users.find(u => u.email.toLowerCase() === sess.email.toLowerCase() && u.active);
+    if (!user) { clearSession(); return false; }
+    // Renovar expiração a cada visita (sliding window)
+    saveSession(user);
+
+    currentUser = user;
+    isAdmin  = user.role === 'admin';
+    isEditor = user.role === 'editor';
+    isViewer = user.role === 'viewer';
+    return true;
+  } catch(e) { return false; }
+}
+
+function applyUserBadges() {
+  document.getElementById('badge-admin').textContent  = isAdmin  ? currentUser.name : '';
+  document.getElementById('badge-editor').textContent = isEditor ? currentUser.name : '';
+  document.getElementById('badge-viewer').textContent = isViewer ? currentUser.name : '';
+  if (isAdmin)  document.getElementById('badge-admin').classList.add('show');
+  if (isEditor) document.getElementById('badge-editor').classList.add('show');
+  if (isViewer) document.getElementById('badge-viewer').classList.add('show');
+  document.getElementById('logout-btn').classList.add('show');
+}
+
 document.getElementById('login-form').addEventListener('submit', function(e) {
   e.preventDefault();
   const email = document.getElementById('l-email').value.trim().toLowerCase();
@@ -1114,18 +1165,13 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
   isEditor = user.role === 'editor';
   isViewer = user.role === 'viewer';
 
+  saveSession(user);
   showMainContent();
-
-  document.getElementById('badge-admin').textContent  = isAdmin  ? user.name : '';
-  document.getElementById('badge-editor').textContent = isEditor ? user.name : '';
-  document.getElementById('badge-viewer').textContent = isViewer ? user.name : '';
-  if (isAdmin)  document.getElementById('badge-admin').classList.add('show');
-  if (isEditor) document.getElementById('badge-editor').classList.add('show');
-  if (isViewer) document.getElementById('badge-viewer').classList.add('show');
-  document.getElementById('logout-btn').classList.add('show');
+  applyUserBadges();
 });
 
 document.getElementById('logout-btn').addEventListener('click', function() {
+  clearSession();
   isAdmin = isEditor = isViewer = false; currentUser = null;
   ['badge-admin','badge-editor','badge-viewer','logout-btn'].forEach(id =>
     document.getElementById(id).classList.remove('show'));
@@ -1134,6 +1180,14 @@ document.getElementById('logout-btn').addEventListener('click', function() {
   ['l-email','l-pass'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('login-error').textContent = '';
 });
+
+// ── Restaurar sessão ao carregar a página ──────────────────
+(function() {
+  if (restoreSession()) {
+    showMainContent();
+    applyUserBadges();
+  }
+})();
 
 function showMainContent() {
   document.getElementById('login-screen').style.display = 'none';
