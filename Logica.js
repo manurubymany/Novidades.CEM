@@ -1096,9 +1096,11 @@ function deleteUserRow(idx) {
 ═══════════════════════════════════════════════════════════ */
 initUsersStorage();
 
-// ── Session helpers (localStorage com expiração de 30 dias — persiste mesmo ao fechar o navegador) ──
-const SESSION_KEY = 'cemActiveSession';
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias em milissegundos
+// ── Session helpers ────────────────────────────────────────
+// localStorage com sliding window de 30 dias.
+// Persiste mesmo ao fechar o navegador/aba.
+const SESSION_KEY    = 'cemActiveSession';
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
 function saveSession(user) {
   try {
@@ -1115,26 +1117,60 @@ function clearSession() {
   try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
 }
 
+// Restaura sessão consultando PRIMEIRO o Firebase, com fallback no localStorage.
+// Retorna uma Promise<boolean>.
 function restoreSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return false;
-    const sess = JSON.parse(raw);
-    // Verificar expiração
-    if (sess.expiresAt && Date.now() > sess.expiresAt) { clearSession(); return false; }
-    // Verificar se o usuário ainda existe e está ativo
-    const users = LS.get('siteUsers', []);
-    const user  = users.find(u => u.email.toLowerCase() === sess.email.toLowerCase() && u.active);
-    if (!user) { clearSession(); return false; }
-    // Renovar expiração a cada visita (sliding window)
-    saveSession(user);
+  return new Promise(resolve => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) { resolve(false); return; }
+      const sess = JSON.parse(raw);
 
-    currentUser = user;
-    isAdmin  = user.role === 'admin';
-    isEditor = user.role === 'editor';
-    isViewer = user.role === 'viewer';
-    return true;
-  } catch(e) { return false; }
+      // Sessão expirada
+      if (sess.expiresAt && Date.now() > sess.expiresAt) { clearSession(); resolve(false); return; }
+
+      const email = (sess.email || '').toLowerCase();
+
+      // ── Tentar verificar no Firebase primeiro ──────────────
+      database.ref('usuarios').orderByChild('email').equalTo(email).once('value')
+        .then(snapshot => {
+          let user = null;
+          snapshot.forEach(child => {
+            const u = child.val();
+            if (u.active && u.email.toLowerCase() === email) user = u;
+          });
+
+          if (!user) {
+            // Firebase não tem — fallback no localStorage (compatibilidade)
+            const localUsers = LS.get('siteUsers', []);
+            user = localUsers.find(u => u.email.toLowerCase() === email && u.active) || null;
+          }
+
+          if (!user) { clearSession(); resolve(false); return; }
+
+          // Renovar TTL (sliding window)
+          saveSession(user);
+          currentUser = user;
+          isAdmin  = user.role === 'admin';
+          isEditor = user.role === 'editor';
+          isViewer = user.role === 'viewer';
+          resolve(true);
+        })
+        .catch(() => {
+          // Firebase indisponível — usar localStorage como fallback
+          const localUsers = LS.get('siteUsers', []);
+          const user = localUsers.find(u => u.email.toLowerCase() === email && u.active) || null;
+          if (!user) { clearSession(); resolve(false); return; }
+          saveSession(user);
+          currentUser = user;
+          isAdmin  = user.role === 'admin';
+          isEditor = user.role === 'editor';
+          isViewer = user.role === 'viewer';
+          resolve(true);
+        });
+
+    } catch(e) { resolve(false); }
+  });
 }
 
 function applyUserBadges() {
@@ -1147,27 +1183,60 @@ function applyUserBadges() {
   document.getElementById('logout-btn').classList.add('show');
 }
 
+// ── Login ──────────────────────────────────────────────────
+// Tenta Firebase primeiro; fallback no localStorage.
 document.getElementById('login-form').addEventListener('submit', function(e) {
   e.preventDefault();
-  const email = document.getElementById('l-email').value.trim().toLowerCase();
-  const pass  = document.getElementById('l-pass').value;
-  const errEl = document.getElementById('login-error');
+  const email  = document.getElementById('l-email').value.trim().toLowerCase();
+  const pass   = document.getElementById('l-pass').value;
+  const errEl  = document.getElementById('login-error');
+  const btnEl  = this.querySelector('button[type="submit"]') || this.querySelector('button');
   errEl.textContent = '';
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Entrando...'; }
 
-  const users = LS.get('siteUsers', []);
-  const user  = users.find(u => u.email.toLowerCase() === email && u.password === pass);
+  database.ref('usuarios').orderByChild('email').equalTo(email).once('value')
+    .then(snapshot => {
+      let user = null;
+      snapshot.forEach(child => {
+        const u = child.val();
+        if (u.email.toLowerCase() === email && u.password === pass) user = u;
+      });
 
-  if (!user) { errEl.textContent = 'E-mail ou senha incorretos.'; return; }
-  if (!user.active) { errEl.textContent = 'Usuário inativo. Contate o administrador.'; return; }
+      // Fallback: usuários no localStorage
+      if (!user) {
+        const localUsers = LS.get('siteUsers', []);
+        user = localUsers.find(u => u.email.toLowerCase() === email && u.password === pass) || null;
+      }
 
-  currentUser = user;
-  isAdmin  = user.role === 'admin';
-  isEditor = user.role === 'editor';
-  isViewer = user.role === 'viewer';
+      if (!user)         { errEl.textContent = 'E-mail ou senha incorretos.'; return; }
+      if (!user.active)  { errEl.textContent = 'Usuário inativo. Contate o administrador.'; return; }
 
-  saveSession(user);
-  showMainContent();
-  applyUserBadges();
+      currentUser = user;
+      isAdmin  = user.role === 'admin';
+      isEditor = user.role === 'editor';
+      isViewer = user.role === 'viewer';
+
+      saveSession(user);
+      showMainContent();
+      applyUserBadges();
+    })
+    .catch(() => {
+      // Firebase offline — tentar localStorage
+      const localUsers = LS.get('siteUsers', []);
+      const user = localUsers.find(u => u.email.toLowerCase() === email && u.password === pass) || null;
+      if (!user)        { errEl.textContent = 'E-mail ou senha incorretos.'; return; }
+      if (!user.active) { errEl.textContent = 'Usuário inativo. Contate o administrador.'; return; }
+      currentUser = user;
+      isAdmin  = user.role === 'admin';
+      isEditor = user.role === 'editor';
+      isViewer = user.role === 'viewer';
+      saveSession(user);
+      showMainContent();
+      applyUserBadges();
+    })
+    .finally(() => {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Entrar'; }
+    });
 });
 
 document.getElementById('logout-btn').addEventListener('click', function() {
@@ -1182,11 +1251,14 @@ document.getElementById('logout-btn').addEventListener('click', function() {
 });
 
 // ── Restaurar sessão ao carregar a página ──────────────────
+// restoreSession() agora é async — aguarda antes de mostrar o conteúdo.
 (function() {
-  if (restoreSession()) {
-    showMainContent();
-    applyUserBadges();
-  }
+  restoreSession().then(ok => {
+    if (ok) {
+      showMainContent();
+      applyUserBadges();
+    }
+  });
 })();
 
 function showMainContent() {
